@@ -1,11 +1,11 @@
-name: Build and publish Docker image
+name: Build, scan and publish Docker image
 
 on:
   push:
     branches: [main]
 
 jobs:
-  build-and-push:
+  build-scan-push:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -28,10 +28,32 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}
 
-      - name: Build et push de l'image
+      - name: Build de l'image (sans la publier)
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: true
+          load: true
+          push: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Scan de vulnérabilités avec Trivy
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ghcr.io/${{ github.repository }}:main
+          format: table
+          output: trivy-results.txt
+          severity: CRITICAL,HIGH,MEDIUM
+          exit-code: '0'
+
+      - name: Affichage du résultat du scan
+        if: always()
+        run: |
+          cat trivy-results.txt
+          echo '## Résultat du scan Trivy' >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat trivy-results.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Publication de l'image sur GitHub Packages
+        run: docker push --all-tags ghcr.io/${{ github.repository }}
